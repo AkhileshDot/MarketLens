@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import anthropic
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
@@ -35,3 +37,16 @@ def create_message(user_content: str) -> anthropic.types.Message:
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
+
+
+def stream_message(user_content: str) -> Iterator[str]:
+    """Yield response text chunks as they arrive. No retry wrapper here —
+    a stream can fail mid-flight after already sending partial output to the
+    client, so a transparent restart would risk duplicating visible text."""
+    with _client.messages.stream(
+        model=settings.model_id,
+        max_tokens=settings.max_tokens,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    ) as stream:
+        yield from stream.text_stream

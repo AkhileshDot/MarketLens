@@ -87,3 +87,25 @@ def test_stop_reason_warning_tool_use():
 
 def test_stop_reason_warning_unexpected_value():
     assert "unexpected" in _stop_reason_warning("pause_turn").lower()
+
+
+@patch("app.main.stream_message")
+@patch("app.main.get_daily_prices")
+def test_chat_streams_sse_frames_ending_in_done(mock_get_prices, mock_stream_message):
+    mock_get_prices.return_value = _fake_prices()
+    mock_stream_message.return_value = iter(["Hello ", "world."])
+
+    response = client.get("/chat", params={"ticker": "NSE:INFY", "days": 2})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text == "data: Hello \n\ndata: world.\n\ndata: [DONE]\n\n"
+
+
+@patch("app.main.get_daily_prices")
+def test_chat_unknown_ticker_returns_404(mock_get_prices):
+    mock_get_prices.side_effect = TickerNotFoundError("No price data for 'NSE:FAKE'")
+
+    response = client.get("/chat", params={"ticker": "NSE:FAKE", "days": 10})
+
+    assert response.status_code == 404
