@@ -1,0 +1,37 @@
+import anthropic
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from app.config import settings
+
+SYSTEM_PROMPT = """You are MarketLens, a research assistant for NSE-listed stocks.
+
+Explain trends, ratios and recent events using only the data provided. Never give \
+investment advice: no buy/sell/hold calls, no price targets, no recommendations of any \
+kind. If asked for a recommendation, explain that you provide analysis only.
+
+Always include a one-line disclaimer at the end: "This is not investment advice."
+"""
+
+_client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=30.0, max_retries=0)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry only on rate limits (429), overload (529), and connection errors."""
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code in (429, 529)
+    return isinstance(exc, anthropic.APIConnectionError)
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=1, min=1, max=20),
+    reraise=True,
+)
+def create_message(user_content: str) -> anthropic.types.Message:
+    return _client.messages.create(
+        model=settings.model_id,
+        max_tokens=settings.max_tokens,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    )
