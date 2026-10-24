@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.claude_client import create_message, stream_message
+from app.claude_client import MessageContent, create_message, extract_text, stream_message
 from app.data_source import TickerNotFoundError, get_daily_prices
+from app.file_input import UnsupportedFileTypeError, build_content_block
 from app.logging_config import get_logger, log_event, new_request_id, timed
 
 app = FastAPI(title="MarketLens", version="0.1.0")
@@ -12,20 +13,18 @@ logger = get_logger("marketlens")
 DISCLAIMER = "This is a personal research demo, not investment advice. Not SEBI registered."
 
 
-class AnalyzeRequest(BaseModel):
-    ticker: str
-    days: int = 90
-
-
 class AnalyzeResponse(BaseModel):
     ticker: str
     note: str
     disclaimer: str = DISCLAIMER
 
 
-def _build_prompt(ticker: str, days: int, request_id: str) -> str:
-    """Fetch prices and build the analysis prompt. Raises HTTPException(404) for an
-    unknown ticker — shared by every endpoint that needs a priced note."""
+def _build_prompt(
+    ticker: str, days: int, request_id: str, file: UploadFile | None = None
+) -> MessageContent:
+    """Fetch prices and build the analysis prompt, optionally alongside an uploaded
+    chart screenshot or results PDF. Raises HTTPException(404) for an unknown ticker,
+    HTTPException(400) for an unsupported file type."""
     try:
         prices = get_daily_prices(ticker, days=days)
     except TickerNotFoundError as e:
@@ -33,12 +32,27 @@ def _build_prompt(ticker: str, days: int, request_id: str) -> str:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
     csv_snippet = prices.tail(days).to_csv()
-    return (
+    text = (
         f"Here are the last {days} days of daily OHLCV data for {ticker}, as CSV:\n\n"
         f"{csv_snippet}\n\n"
         "Write a short, plain-language note explaining the recent price trend. "
         "Do not recommend buying, selling or holding, and do not give a price target."
     )
+
+    if file is None:
+        return text
+
+    try:
+        block = build_content_block(file.file.read(), file.content_type or "")
+    except UnsupportedFileTypeError as e:
+        log_event(logger, event="analyze_error", request_id=request_id, ticker=ticker, error=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    text += (
+        "\n\nA chart screenshot or results document is attached — factor it into the "
+        "note, citing what it shows alongside the price data above."
+    )
+    return [block, {"type": "text", "text": text}]
 
 
 def _stop_reason_warning(stop_reason: str | None) -> str | None:
@@ -54,14 +68,18 @@ def _stop_reason_warning(stop_reason: str | None) -> str | None:
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
+def analyze(
+    ticker: str = Form(...),
+    days: int = Form(90),
+    file: UploadFile | None = File(None),
+) -> AnalyzeResponse:
     request_id = new_request_id()
-    prompt = _build_prompt(req.ticker, req.days, request_id)
+    prompt = _build_prompt(ticker, days, request_id, file)
 
     with timed() as t:
         message = create_message(prompt)
 
-    note = message.content[0].text
+    note = extract_text(message)
     warning = _stop_reason_warning(message.stop_reason)
     if warning:
         note += f"\n\n[Note: {warning}]"
@@ -70,21 +88,26 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
         logger,
         event="analyze",
         request_id=request_id,
-        ticker=req.ticker,
+        ticker=ticker,
         model=message.model,
         input_tokens=message.usage.input_tokens,
         output_tokens=message.usage.output_tokens,
         stop_reason=message.stop_reason,
+        has_file=file is not None,
         **t,
     )
 
-    return AnalyzeResponse(ticker=req.ticker, note=note)
+    return AnalyzeResponse(ticker=ticker, note=note)
 
 
-@app.get("/chat")
-def chat(ticker: str, days: int = 90):
+@app.post("/chat")
+def chat(
+    ticker: str = Form(...),
+    days: int = Form(90),
+    file: UploadFile | None = File(None),
+):
     request_id = new_request_id()
-    prompt = _build_prompt(ticker, days, request_id)
+    prompt = _build_prompt(ticker, days, request_id, file)
 
     def event_stream():
         log_event(logger, event="chat_start", request_id=request_id, ticker=ticker)

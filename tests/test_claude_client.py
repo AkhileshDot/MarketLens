@@ -4,7 +4,7 @@ import anthropic
 import httpx2 as httpx
 import pytest
 
-from app.claude_client import create_message
+from app.claude_client import create_message, extract_text
 
 
 def _status_error(status_code: int) -> anthropic.APIStatusError:
@@ -43,3 +43,20 @@ def test_does_not_retry_bad_request(mock_client):
         create_message("hello")
 
     assert mock_client.messages.create.call_count == 1
+
+
+def test_extract_text_skips_leading_thinking_block():
+    """Current-gen models run adaptive thinking by default, so content[0] can be a
+    ThinkingBlock. extract_text must look past it, not assume index 0 is text."""
+    thinking_block = MagicMock(type="thinking")
+    text_block = MagicMock(type="text", text="Prices moved sideways.")
+    message = MagicMock(content=[thinking_block, text_block])
+
+    assert extract_text(message) == "Prices moved sideways."
+
+
+def test_extract_text_joins_multiple_text_blocks():
+    blocks = [MagicMock(type="text", text="Part one. "), MagicMock(type="text", text="Part two.")]
+    message = MagicMock(content=blocks)
+
+    assert extract_text(message) == "Part one. Part two."

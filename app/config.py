@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     model_id: str = "claude-sonnet-5"
     log_level: str = "INFO"
-    max_tokens: int = 1024
+    max_tokens: int = 4096
 
 
 settings = Settings()

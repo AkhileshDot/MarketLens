@@ -44,3 +44,39 @@ models (Sonnet 5+), `temperature`/`top_p`/`top_k` are removed entirely, replaced
 `output_config.effort` + adaptive thinking. Lesson: SDK/API behavior is generation-
 specific; code written against training-data knowledge of an older API shape can be
 silently wrong until it's actually run.
+
+## Multimodal input: base64 inline vs. the Files API
+
+**Decision:** images/PDFs are base64-encoded inline into each request's content block
+(`build_content_block()` in `app/file_input.py`).
+
+**Rejected alternative:** upload the file once via the Files API, then reference it by
+`file_id` in the request.
+
+**Why rejected:** the Files API earns its cost when the *same* file is reused across
+multiple requests (upload once, reference many times — saves re-sending bytes). Here,
+each `/analyze`/`/chat` call is a one-shot "look at this chart alongside this ticker's
+data" — there's no reuse. Inline base64 is simpler (no second API call, no file
+lifecycle to manage) and correct for the access pattern. Would revisit if a future
+feature needs to reference the same uploaded document across several turns of a
+conversation or several subagents (Week 3).
+
+## Bug found via this feature: content[0] isn't reliably the text block
+
+Discovered that `message.content[0].text` broke with `AttributeError: 'ThinkingBlock'
+object has no attribute 'text'` the first time a real request triggered adaptive
+thinking. Current-gen models (Sonnet 5+) run adaptive thinking **by default** — nothing
+about multimodal input caused this, it was a pre-existing latent bug that a slower/more
+complex multimodal prompt simply had a higher chance of triggering (thinking is more
+likely to kick in on harder prompts). Fixed with `extract_text()`, which filters
+`message.content` for `type == "text"` blocks instead of indexing position 0.
+
+**Exam angle:** never assume response content block ordering/shape is stable across
+model generations — always check `.type` before reading type-specific fields.
+
+## Smaller note: GET vs POST for `/chat`
+
+`/chat` moved from `GET` with query params to `POST` with multipart form data, to carry
+an optional file upload (browsers' native `EventSource` only supports `GET`, so a real
+frontend would need `fetch()` + manual stream reading instead of `EventSource` here —
+accepted, since this project's clients are curl/Python, not a browser `EventSource`).
