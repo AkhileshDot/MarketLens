@@ -42,6 +42,34 @@ def create_message(user_content: MessageContent) -> anthropic.types.Message:
     )
 
 
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=1, min=1, max=20),
+    reraise=True,
+)
+def create_turn(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    tool_choice: dict | None = None,
+) -> anthropic.types.Message:
+    """Like create_message, but takes the full conversation history and an optional
+    tool list — what a multi-turn tool-use loop needs that a single-shot call doesn't."""
+    kwargs = {}
+    if tools is not None:
+        kwargs["tools"] = tools
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
+
+    return _client.messages.create(
+        model=settings.model_id,
+        max_tokens=settings.max_tokens,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+        **kwargs,
+    )
+
+
 def extract_text(message: anthropic.types.Message) -> str:
     """Current-gen models run adaptive thinking by default, so content[0] may be a
     ThinkingBlock, not a TextBlock — concatenate every text block instead of indexing."""
