@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -9,6 +10,14 @@ from app.logging_config import get_logger, log_event, new_request_id, timed
 
 app = FastAPI(title="MarketLens", version="0.1.0")
 logger = get_logger("marketlens")
+
+# Personal demo, frontend dev server only — see CLAUDE.md ground rules (private deployment).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 DISCLAIMER = "This is a personal research demo, not investment advice. Not SEBI registered."
 
