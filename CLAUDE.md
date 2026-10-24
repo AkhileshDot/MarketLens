@@ -30,6 +30,7 @@ sourced note explaining trends, ratios and recent events.
 
 ```
 app/          FastAPI service (Week 1+)
+frontend/     React + TypeScript UI (Vite dev server, localhost:5173)
 mcp_server/   MCP server wrapping data tools (Week 2+)
 agents/       Claude Agent SDK orchestrator + subagents (Week 3+)
 evals/        Eval set and regression tests (Week 6)
@@ -37,6 +38,13 @@ tests/        Unit/integration tests
 data/         CSV cache, sample annual reports (gitignored cache dir)
 notes/        One trade-off writeup per week (the exam-prep habit)
 ```
+
+## Running locally
+
+Backend: `uv run uvicorn app.main:app --port 8000` (from repo root).
+Frontend: `npm run dev` (from `frontend/`), serves on `localhost:5173`.
+CORS in `app/main.py` only allows the Vite dev server origin — update it if the
+frontend ever runs elsewhere.
 
 ## Weekly trade-off habit
 
