@@ -40,6 +40,31 @@ an empty answer) and surface an explicit explanation instead.
 **Exam angle:** a stop_reason of `end_turn` does not guarantee non-empty content — don't
 assume "the call succeeded" means "there's something to show the user."
 
+## Agent Skill (SKILL.md) vs. baking the same content into SYSTEM_PROMPT
+
+**Decision:** note format and ratio definitions (P/E, ROE, debt-to-equity) are packaged
+as a Claude Code project skill (`.claude/skills/marketlens-notes/SKILL.md`), not added
+to `claude_client.py`'s `SYSTEM_PROMPT`.
+
+**Rejected alternative:** paste the same formulas/format guidance directly into the
+system prompt sent on every single Messages API call.
+
+**Why rejected — and an important distinction:** an Agent Skill is a **Claude Code
+session-level concept** (loaded on-demand when the task shape matches, e.g. "write a
+note" or "explain P/E"), not a feature the deployed FastAPI app can invoke through the
+Messages API at request time. So this skill is genuinely useful while *developing*
+MarketLens with Claude Code (consistent formula explanations, consistent note
+structure, surfaced only when relevant) — but it does **not** by itself make the live
+`/analyze` endpoint's output follow this format. For that, the formulas/format still
+need to live in `SYSTEM_PROMPT` (paying their token cost on every request) or, later,
+be wired in via the Claude *API's* own Skills feature (`container={"skills": [...]}`,
+a different mechanism from Claude Code project skills, despite the similar name).
+
+**Exam angle:** "Agent Skills" is genuinely two different things depending on the
+surface — a Claude Code/Claude.ai convenience that loads instructions into *the
+assistant's own context* on demand, vs. the Claude API's own skills container feature
+for code-execution-backed document generation. Confusing the two is an easy trap.
+
 ## Secondary trade-off: validate required tool fields ourselves vs. trust the JSON Schema
 
 **Decision:** `dispatch()` in `app/tools.py` checks `required` fields itself before

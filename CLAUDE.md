@@ -69,4 +69,6 @@ rejected and why. This is deliberate exam prep — CCDV-F questions are scenario
 
 ## Current status
 
-Week 1 in progress: FastAPI `/analyze` endpoint over static price data.
+Weeks 1-2 complete: FastAPI service (`/analyze`, `/chat` SSE, `/ask`), React frontend,
+manual tool-use loop over 4 tools, MCP server (stdio + Streamable HTTP), Agent Skill
+for note format/ratios. Next: Week 3 (Agent SDK, orchestrator-worker subagents).
