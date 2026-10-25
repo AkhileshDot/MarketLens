@@ -45,6 +45,9 @@ Backend: `uv run uvicorn app.main:app --port 8000` (from repo root).
 Frontend: `npm run dev` (from `frontend/`), serves on `localhost:5173`.
 CORS in `app/main.py` only allows the Vite dev server origin — update it if the
 frontend ever runs elsewhere.
+MCP server: `uv run python -m mcp_server.server` (stdio, default) or
+`uv run python -m mcp_server.server http` (Streamable HTTP, port 8001 — deliberately
+not 8000, so it never collides with the FastAPI backend).
 
 ## Weekly trade-off habit
 
