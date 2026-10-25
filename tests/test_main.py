@@ -4,7 +4,8 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.data_source import TickerNotFoundError
-from app.main import _stop_reason_warning, app
+from app.main import _build_tool_choice, _stop_reason_warning, app
+from app.tool_loop import ToolLoopLimitExceeded
 
 client = TestClient(app)
 
@@ -144,3 +145,61 @@ def test_chat_unknown_ticker_returns_404(mock_get_prices):
     response = client.post("/chat", data={"ticker": "NSE:FAKE", "days": 10})
 
     assert response.status_code == 404
+
+
+def test_build_tool_choice_auto_any_none():
+    assert _build_tool_choice("auto") == {"type": "auto"}
+    assert _build_tool_choice("any") == {"type": "any"}
+    assert _build_tool_choice("none") == {"type": "none"}
+
+
+def test_build_tool_choice_specific_tool():
+    assert _build_tool_choice("get_quote") == {"type": "tool", "name": "get_quote"}
+
+
+def test_build_tool_choice_unknown_value_raises():
+    from fastapi import HTTPException
+
+    try:
+        _build_tool_choice("not_a_real_tool")
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 400
+
+
+@patch("app.main.run_tool_loop")
+def test_ask_returns_answer_and_tools_called(mock_run_tool_loop):
+    mock_run_tool_loop.return_value = (_fake_message("The price is 1150."), ["get_quote"])
+
+    response = client.post("/ask", data={"question": "What's the price of NSE:INFY?"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "The price is 1150."
+    assert body["tools_called"] == ["get_quote"]
+
+    # default tool_choice is "auto"
+    call_kwargs = mock_run_tool_loop.call_args.kwargs
+    assert call_kwargs["tool_choice"] == {"type": "auto"}
+
+
+@patch("app.main.run_tool_loop")
+def test_ask_passes_through_requested_tool_choice(mock_run_tool_loop):
+    mock_run_tool_loop.return_value = (_fake_message("Done."), ["get_financials"])
+
+    response = client.post(
+        "/ask", data={"question": "Tell me about NSE:INFY", "tool_choice": "get_financials"}
+    )
+
+    assert response.status_code == 200
+    call_kwargs = mock_run_tool_loop.call_args.kwargs
+    assert call_kwargs["tool_choice"] == {"type": "tool", "name": "get_financials"}
+
+
+@patch("app.main.run_tool_loop")
+def test_ask_loop_limit_exceeded_returns_500(mock_run_tool_loop):
+    mock_run_tool_loop.side_effect = ToolLoopLimitExceeded("did not finish within 6 turns")
+
+    response = client.post("/ask", data={"question": "Keep going forever"})
+
+    assert response.status_code == 500

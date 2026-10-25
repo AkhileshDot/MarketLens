@@ -7,6 +7,8 @@ from app.claude_client import MessageContent, create_message, extract_text, stre
 from app.data_source import TickerNotFoundError, get_daily_prices
 from app.file_input import UnsupportedFileTypeError, build_content_block
 from app.logging_config import get_logger, log_event, new_request_id, timed
+from app.tool_loop import ToolLoopLimitExceeded, run_tool_loop
+from app.tools import TOOL_DEFINITIONS
 
 app = FastAPI(title="MarketLens", version="0.1.0")
 logger = get_logger("marketlens")
@@ -26,6 +28,24 @@ class AnalyzeResponse(BaseModel):
     ticker: str
     note: str
     disclaimer: str = DISCLAIMER
+
+
+class AskResponse(BaseModel):
+    answer: str
+    tools_called: list[str]
+    disclaimer: str = DISCLAIMER
+
+
+_TOOL_NAMES = {t["name"] for t in TOOL_DEFINITIONS}
+
+
+def _build_tool_choice(value: str) -> dict:
+    """Map a UI-friendly string to the Messages API's tool_choice shape."""
+    if value in ("auto", "any", "none"):
+        return {"type": value}
+    if value not in _TOOL_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unknown tool_choice {value!r}")
+    return {"type": "tool", "name": value}
 
 
 def _build_prompt(
@@ -127,6 +147,51 @@ def chat(
         log_event(logger, event="chat_end", request_id=request_id, ticker=ticker, **t)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/ask", response_model=AskResponse)
+def ask(question: str = Form(...), tool_choice: str = Form("auto")) -> AskResponse:
+    """Free-text question answered via the manual tool-use loop. `tool_choice`
+    is a UI-friendly string ('auto' | 'any' | 'none' | an exact tool name) so the
+    frontend can demonstrate how each mode changes which tools get called."""
+    request_id = new_request_id()
+    choice = _build_tool_choice(tool_choice)
+
+    with timed() as t:
+        try:
+            message, tools_called = run_tool_loop(question, tool_choice=choice)
+        except ToolLoopLimitExceeded as e:
+            log_event(logger, event="ask_error", request_id=request_id, error=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+    answer = extract_text(message)
+    if not answer and tool_choice == "none":
+        # tool_choice=none can legitimately starve the model of data it needs — it
+        # then produces no text rather than fabricate an answer. Surface that plainly
+        # instead of returning an empty string the UI would render as broken.
+        answer = (
+            "The model declined to answer without tool access — it likely needed "
+            "live data to respond truthfully. Try tool_choice=auto instead."
+        )
+    warning = _stop_reason_warning(message.stop_reason)
+    if warning:
+        answer += f"\n\n[Note: {warning}]"
+
+    log_event(
+        logger,
+        event="ask",
+        request_id=request_id,
+        question=question,
+        tool_choice=tool_choice,
+        tools_called=tools_called,
+        model=message.model,
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+        stop_reason=message.stop_reason,
+        **t,
+    )
+
+    return AskResponse(answer=answer, tools_called=tools_called)
 
 
 @app.get("/health")

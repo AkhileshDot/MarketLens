@@ -50,3 +50,15 @@
   border-radius: 6px;
   font-family: inherit;
 }
+
+.tools-called {
+  font-size: 0.85rem;
+  color: #555;
+  font-weight: 600;
+}
+
+textarea,
+select {
+  font-family: inherit;
+  padding: 0.4rem;
+}

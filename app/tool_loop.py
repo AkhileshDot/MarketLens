@@ -10,16 +10,25 @@ class ToolLoopLimitExceeded(Exception):
 
 
 def run_tool_loop(user_content, max_turns: int = 6, tool_choice: dict | None = None):
-    """Run the loop to completion. Returns the final Message (stop_reason != tool_use).
-    Raises ToolLoopLimitExceeded if Claude keeps calling tools past max_turns —
-    a budget/termination guard, not just a nice-to-have."""
+    """Run the loop to completion. Returns (final Message, tools_called) — tools_called
+    is the ordered list of tool names actually invoked, across every turn.
+
+    tool_choice (if given) applies ONLY to the first turn. Forcing "any" or a specific
+    tool on every turn would force Claude to keep calling tools even after it already
+    has what it needs to answer — the forced choice should kick off the loop, not
+    hold it hostage.
+
+    Raises ToolLoopLimitExceeded if Claude keeps calling tools past max_turns — a
+    budget/termination guard, not just a nice-to-have."""
     messages = [{"role": "user", "content": user_content}]
+    tools_called = []
 
     for turn in range(max_turns):
-        message = create_turn(messages, tools=TOOL_DEFINITIONS, tool_choice=tool_choice)
+        current_tool_choice = tool_choice if turn == 0 else None
+        message = create_turn(messages, tools=TOOL_DEFINITIONS, tool_choice=current_tool_choice)
 
         if message.stop_reason != "tool_use":
-            return message
+            return message, tools_called
 
         messages.append({"role": "assistant", "content": message.content})
 
@@ -27,6 +36,7 @@ def run_tool_loop(user_content, max_turns: int = 6, tool_choice: dict | None = N
         for block in message.content:
             if block.type != "tool_use":
                 continue
+            tools_called.append(block.name)
             content, is_error = dispatch(block.name, block.input)
             tool_results.append(
                 {

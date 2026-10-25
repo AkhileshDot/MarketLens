@@ -3,6 +3,16 @@ import './App.css'
 
 const API_BASE = 'http://localhost:8000'
 
+const TOOL_CHOICES = [
+  { value: 'auto', label: 'auto — Claude decides' },
+  { value: 'any', label: 'any — must call some tool' },
+  { value: 'none', label: 'none — must not call a tool' },
+  { value: 'get_quote', label: 'force: get_quote' },
+  { value: 'get_ohlc', label: 'force: get_ohlc' },
+  { value: 'get_financials', label: 'force: get_financials' },
+  { value: 'search_news', label: 'force: search_news' },
+]
+
 function App() {
   const [ticker, setTicker] = useState('NSE:INFY')
   const [days, setDays] = useState(90)
@@ -10,6 +20,13 @@ function App() {
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const [question, setQuestion] = useState('What is the current price of NSE:INFY?')
+  const [toolChoice, setToolChoice] = useState('auto')
+  const [askAnswer, setAskAnswer] = useState('')
+  const [toolsCalled, setToolsCalled] = useState<string[]>([])
+  const [askLoading, setAskLoading] = useState(false)
+  const [askError, setAskError] = useState('')
 
   function buildFormData(): FormData {
     const formData = new FormData()
@@ -84,6 +101,35 @@ function App() {
     }
   }
 
+  async function handleAsk(e: FormEvent) {
+    e.preventDefault()
+    setAskLoading(true)
+    setAskError('')
+    setAskAnswer('')
+    setToolsCalled([])
+
+    try {
+      const formData = new FormData()
+      formData.append('question', question)
+      formData.append('tool_choice', toolChoice)
+
+      const response = await fetch(`${API_BASE}/ask`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail ?? `Request failed: ${response.status}`)
+      }
+      setAskAnswer(`${data.answer}\n\n${data.disclaimer}`)
+      setToolsCalled(data.tools_called)
+    } catch (err) {
+      setAskError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setAskLoading(false)
+    }
+  }
+
   return (
     <main className="app">
       <h1>MarketLens</h1>
@@ -135,6 +181,47 @@ function App() {
       {loading && <p className="status">Working…</p>}
       {error && <p className="error">{error}</p>}
       {note && <pre className="note">{note}</pre>}
+
+      <hr />
+
+      <h2>Ask (tool_choice demo)</h2>
+      <form className="form" onSubmit={handleAsk}>
+        <label>
+          Question
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={2}
+          />
+        </label>
+
+        <label>
+          tool_choice
+          <select value={toolChoice} onChange={(e) => setToolChoice(e.target.value)}>
+            {TOOL_CHOICES.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="button-row">
+          <button type="submit" disabled={askLoading}>
+            Ask
+          </button>
+        </div>
+      </form>
+
+      {askLoading && <p className="status">Working…</p>}
+      {askError && <p className="error">{askError}</p>}
+      {toolsCalled.length > 0 && (
+        <p className="tools-called">Tools called: {toolsCalled.join(', ')}</p>
+      )}
+      {toolsCalled.length === 0 && askAnswer && (
+        <p className="tools-called">Tools called: none</p>
+      )}
+      {askAnswer && <pre className="note">{askAnswer}</pre>}
     </main>
   )
 }
