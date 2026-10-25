@@ -47,7 +47,12 @@ CORS in `app/main.py` only allows the Vite dev server origin — update it if th
 frontend ever runs elsewhere.
 MCP server: `uv run python -m mcp_server.server` (stdio, default) or
 `uv run python -m mcp_server.server http` (Streamable HTTP, port 8001 — deliberately
-not 8000, so it never collides with the FastAPI backend).
+not 8000, so it never collides with the FastAPI backend). `.mcp.json` at the repo root
+configures Claude Code/Desktop to launch it over stdio automatically — restart the
+client to pick up changes to this file. Note: our own app (`app/tool_loop.py`) does
+NOT go through MCP — it calls `app/tools.py` in-process. The MCP server is for
+external clients (Claude Code, Claude Desktop) only; see
+`notes/week2-mcp-tradeoffs.md`.
 
 ## Weekly trade-off habit
 
