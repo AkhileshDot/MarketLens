@@ -69,12 +69,16 @@ rejected and why. This is deliberate exam prep — CCDV-F questions are scenario
 
 ## Current status
 
-Weeks 1-2 complete. Week 3 in progress: `app/workflow.py` (deterministic prompt
-chaining: fetch → analyze → write) built and compared against
-`agents/single_agent.py` (Claude Agent SDK, wired to our MCP server, decides its own
-tool calls) — see `notes/week3-tradeoffs.md`. Next: orchestrator-worker with 3
-subagents (technicals/fundamentals/news), routing, evaluator-optimizer, termination,
-human-in-the-loop, persisted state.
+Weeks 1-2 complete. Week 3 in progress: `app/workflow.py` (prompt chaining) vs.
+`agents/single_agent.py` (Agent SDK, single agent) vs. `agents/orchestrator.py`
+(Agent SDK, orchestrator delegating to technicals/fundamentals/news subagents via the
+`Agent` tool) — all compared live, see `notes/week3-tradeoffs.md`. Next: routing by
+request type + parallel subagents, evaluator-optimizer, termination, human-in-the-loop,
+persisted state.
 
-Note: `agents/single_agent.py` spawns the `claude` CLI + the MCP server as real
-subprocesses and makes billed API calls — verify it manually, it's not in `pytest`.
+Note: everything in `agents/` spawns the `claude` CLI + MCP server as real
+subprocesses and makes billed API calls — verify manually, not in `pytest`.
+Gotcha: a subagent's own `AgentDefinition.tools` only narrows the top-level session's
+`allowed_tools` — it can't grant beyond it. Every MCP tool any subagent calls must
+also be in the top-level `allowed_tools`, or calls silently fail with
+`permission_denied` while the final output still looks plausible.

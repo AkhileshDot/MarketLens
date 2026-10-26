@@ -40,6 +40,33 @@ the SDK's own orchestration). Verified manually, live, instead; `app/workflow.py
 `app/tool_loop.py` (Weeks 1-2) remain fully mocked and in the fast suite, since those
 are our own code and the right target for unit tests.
 
+## Orchestrator-worker: permission scoping is additive top-down, not independent per-subagent
+
+**Bug hit building `agents/orchestrator.py`:** gave each subagent its own narrow
+`AgentDefinition.tools` list (e.g. the `news` subagent only `search_news`), and set
+the top-level session's `allowed_tools=["Task"]` (the orchestrator "only delegates").
+Every subagent's tool call was silently blocked with `permission_denied` — the
+orchestrator's final note still came back looking plausible, which is the dangerous
+part: it would be easy to ship this without noticing, since nothing crashes.
+
+**Root cause:** a subagent's own `tools` list only *narrows* what the top-level
+session's `allowed_tools` already grants — it cannot grant anything beyond that
+superset. So the top-level list must include every tool any subagent might call, even
+though the orchestrator itself never calls them directly. Fix: `allowed_tools =
+["Agent", *all_mcp_tools_across_every_subagent]`.
+
+**Secondary naming bug:** the delegation tool is called `Agent` in the installed SDK
+version, not `Task` — discovered by inspecting live `ToolUseBlock.name` values rather
+than trusting a guess from the dataclass field name (`agents=`) or general docs
+familiarity.
+
+**Exam angle:** least-privilege scoping across an orchestrator-worker hierarchy is
+additive from the top down, not independently enforced per level. A security review
+that only checks "does this subagent's own tool list look narrow enough" without
+checking the parent session's grant would miss that the whole thing is either too
+permissive (parent grants more than any subagent declares) or silently broken (parent
+grants less than a subagent needs, and the failure doesn't surface loudly).
+
 ## Real finding: the same debt-to-equity figure got two different (both reasonable) interpretations
 
 `get_financials` returns `debt_to_equity: 8.567` for NSE:INFY. In the workflow version,
