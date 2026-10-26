@@ -69,6 +69,12 @@ rejected and why. This is deliberate exam prep — CCDV-F questions are scenario
 
 ## Current status
 
-Weeks 1-2 complete: FastAPI service (`/analyze`, `/chat` SSE, `/ask`), React frontend,
-manual tool-use loop over 4 tools, MCP server (stdio + Streamable HTTP), Agent Skill
-for note format/ratios. Next: Week 3 (Agent SDK, orchestrator-worker subagents).
+Weeks 1-2 complete. Week 3 in progress: `app/workflow.py` (deterministic prompt
+chaining: fetch → analyze → write) built and compared against
+`agents/single_agent.py` (Claude Agent SDK, wired to our MCP server, decides its own
+tool calls) — see `notes/week3-tradeoffs.md`. Next: orchestrator-worker with 3
+subagents (technicals/fundamentals/news), routing, evaluator-optimizer, termination,
+human-in-the-loop, persisted state.
+
+Note: `agents/single_agent.py` spawns the `claude` CLI + the MCP server as real
+subprocesses and makes billed API calls — verify it manually, it's not in `pytest`.
