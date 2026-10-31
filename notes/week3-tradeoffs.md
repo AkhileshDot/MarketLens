@@ -67,6 +67,41 @@ checking the parent session's grant would miss that the whole thing is either to
 permissive (parent grants more than any subagent declares) or silently broken (parent
 grants less than a subagent needs, and the failure doesn't surface loudly).
 
+## Real finding: "parallel" subagent delegation didn't actually run in parallel
+
+**What we checked:** the Week 3 checklist explicitly asks to confirm the three
+analyst subagents "run the three analysts in parallel." We didn't just assume this —
+timed it. `agents/orchestrator.py`'s delegation via the Agent SDK's own `Agent` tool
+showed subagent START times ~3s apart and COMPLETION times growing (36s, 56s, 80s from
+a shared start) — if truly concurrent with similar-sized workloads, completions would
+cluster near each other, not fan out. Even explicitly instructing the orchestrator to
+invoke all three with `run_in_background=true` didn't change this: dispatch became
+non-blocking from the orchestrator's own perspective, but the underlying execution
+still appears to be serialized within that one session (plausibly because one
+`claude` CLI subprocess handles one active model generation at a time, regardless of
+how many logical "background" subagents it's tracking).
+
+**What actually achieves real parallelism:** `agents/orchestrator_parallel.py` runs
+each subagent as a fully independent `query()` session via `asyncio.gather`, then
+synthesizes their three outputs with one plain Messages API call (`create_message` —
+no agent harness needed, synthesis is pure text combination). Verified with a
+standalone 3-way `asyncio.gather` test: total wall-clock time (46.6s) was close to the
+*slowest single* subagent (45.8s), not their sum (113.6s) — genuine concurrency.
+End-to-end, `run_parallel_orchestrator` (56.9s, including the extra synthesis call)
+beat the serialized `run_orchestrator`'s last completion (~79.8s).
+
+**Decision:** keep both modules. `agents/orchestrator.py` demonstrates the Agent SDK's
+own built-in subagent delegation (useful to know, and what a plain reading of the
+SDK's docs would suggest) — but `agents/orchestrator_parallel.py` is the one to
+actually use when real parallel speedup matters, since it drops to independent
+sessions instead of trusting the harness's internal scheduling.
+
+**Exam angle:** "the SDK exposes a `run_in_background` flag" and "this actually runs
+concurrently" are two different claims — always verify concurrency with timestamps,
+never assume a flag named for the behavior you want guarantees that behavior at the
+execution layer. This generalizes past MCP/Agent SDK specifics: the same discipline
+applies to any framework's "async"/"background"/"parallel" knob.
+
 ## Real finding: the same debt-to-equity figure got two different (both reasonable) interpretations
 
 `get_financials` returns `debt_to_equity: 8.567` for NSE:INFY. In the workflow version,

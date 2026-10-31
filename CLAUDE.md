@@ -71,10 +71,11 @@ rejected and why. This is deliberate exam prep — CCDV-F questions are scenario
 
 Weeks 1-2 complete. Week 3 in progress: `app/workflow.py` (prompt chaining) vs.
 `agents/single_agent.py` (Agent SDK, single agent) vs. `agents/orchestrator.py`
-(Agent SDK, orchestrator delegating to technicals/fundamentals/news subagents via the
-`Agent` tool) — all compared live, see `notes/week3-tradeoffs.md`. Next: routing by
-request type + parallel subagents, evaluator-optimizer, termination, human-in-the-loop,
-persisted state.
+(Agent SDK, Agent-tool delegation — verified this SERIALIZES subagents, even with
+`run_in_background=true`) vs. `agents/orchestrator_parallel.py` (independent
+`query()` sessions via `asyncio.gather` — verified GENUINE parallelism, real
+speedup). All compared live, see `notes/week3-tradeoffs.md`. Next: routing by
+request type, evaluator-optimizer, termination, human-in-the-loop, persisted state.
 
 Note: everything in `agents/` spawns the `claude` CLI + MCP server as real
 subprocesses and makes billed API calls — verify manually, not in `pytest`.
